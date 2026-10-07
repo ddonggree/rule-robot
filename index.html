@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>규칙 예측 로봇</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='10' y='14' width='44' height='38' rx='12' fill='%234f7cff'/%3E%3Ccircle cx='24' cy='32' r='5' fill='white'/%3E%3Ccircle cx='40' cy='32' r='5' fill='white'/%3E%3Crect x='30' y='4' width='4' height='10' fill='%234f7cff'/%3E%3C/svg%3E">
+<script>
+/* =====================================================================
+ * ① Firebase 설정 — 「Firebase_설정안내.md」를 보고 아래 값을 채우세요.
+ *    비워 두면 '로컬 모드'로 동작합니다(같은 브라우저의 탭끼리만 공유).
+ * ===================================================================== */
+window.FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDIRkVxYC8uAtli9t4Tke1wsnitlcfbPoo",
+  authDomain: "rule-robot.firebaseapp.com",
+  databaseURL: "https://rule-robot-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "rule-robot",
+  messagingSenderId: "790448240830",
+  appId: "1:790448240830:web:e695ed6644ceb5de9f86ef"
+};
+/* ② 학생 수(이름 버튼 개수) */
+window.STUDENT_COUNT = 12;
+</script>
+<script src="rule-ai.js"></script>
+<style>
+:root{
+  --bg:#f3f6ff; --panel:#ffffff; --ink:#1f2a44; --sub:#5b6785; --line:#d5ddf0;
+  --accent:#4f7cff; --accent-d:#3a5fd6; --ok:#21a67a; --warm:#ffb020; --soft:#e9efff;
+  --cell:min(calc((100vw - 380px) / 6.4), calc((100dvh - 320px) / 4.4));
+  --t-star:#f5b800; --t-heart:#e8434f; --t-circle:#2f7de1; --t-tri:#1fa35c; --t-square:#8a4fd8; --t-dia:#f27a1a;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:"Pretendard","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  -webkit-user-select:none;user-select:none;touch-action:manipulation;overscroll-behavior:none}
+button{font-family:inherit;color:inherit;border:0;cursor:pointer;touch-action:manipulation}
+.hidden{display:none!important}
+
+/* ---------- 공통 버튼 ---------- */
+.btn{min-height:64px;min-width:64px;padding:0 22px;border-radius:20px;font-size:24px;font-weight:800;
+  background:var(--panel);box-shadow:0 4px 0 var(--line),0 6px 14px rgba(31,42,68,.08);
+  display:inline-flex;align-items:center;justify-content:center;gap:10px;transition:transform .08s,box-shadow .08s,opacity .2s}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--line)}
+.btn.primary{background:var(--accent);color:#fff;box-shadow:0 4px 0 var(--accent-d),0 6px 14px rgba(79,124,255,.3)}
+.btn.go{background:var(--ok);color:#fff;box-shadow:0 4px 0 #17805d,0 6px 14px rgba(33,166,122,.3)}
+.btn.warm{background:var(--warm);color:#3b2a00;box-shadow:0 4px 0 #c98500}
+.btn.dim{opacity:.38;filter:grayscale(.6)}
+.btn .ico{font-size:28px;line-height:1}
+
+/* ---------- 이름 고르기 ---------- */
+#namePick{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:24px;background:var(--bg);z-index:30}
+#namePick h1{margin:0;font-size:38px}
+#namePick .grid{display:grid;grid-template-columns:repeat(6,minmax(96px,130px));gap:18px}
+#namePick .grid .btn{height:96px;font-size:30px}
+#namePick .robot-mini{width:120px;height:120px}
+
+/* ---------- 학생/시연 화면 ---------- */
+#app{height:100dvh;display:grid;grid-template-rows:auto 1fr auto}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;gap:12px}
+.topbar .btn{min-height:56px;font-size:22px}
+.banner{flex:1;text-align:center;font-size:26px;font-weight:900;color:var(--ok);opacity:0;transform:scale(.9);transition:.3s}
+.banner.show{opacity:1;transform:scale(1)}
+.banner b{color:var(--accent);font-size:32px}
+
+.stage{display:flex;align-items:center;justify-content:center;gap:26px;padding:0 18px;min-height:0}
+.floorWrap{position:relative;padding:calc(var(--cell)*.1) calc(var(--cell)*.62)}
+.floor{position:relative;display:grid;grid-template-columns:repeat(6,var(--cell));grid-template-rows:repeat(4,var(--cell));gap:6px;
+  background:#dfe6f7;padding:6px;border-radius:18px}
+.cell{position:relative;background:#fff;border-radius:12px;display:flex;align-items:center;justify-content:center;border:3px solid transparent}
+.cell svg{width:72%;height:72%}
+.cell.mine{border-color:#7b8aad}
+.cell.auto{border-color:#e3e8f4}
+.cell.preview svg{opacity:.35}
+.cell.preview{border:3px dashed var(--accent)}
+.cell.unit{outline:4px dashed var(--accent);outline-offset:-2px;background:var(--soft)}
+.cell.pop svg{animation:pop .28s ease-out}
+@keyframes pop{0%{transform:scale(.3)}70%{transform:scale(1.15)}100%{transform:scale(1)}}
+.cell.hide{background:linear-gradient(135deg,#7f9cff,#4f7cff);border-color:#3a5fd6}
+.cell.hide::after{content:"?";color:#fff;font-size:calc(var(--cell)*.5);font-weight:900}
+.cell.flip{animation:flip .45s ease}
+@keyframes flip{0%{transform:rotateY(90deg)}100%{transform:rotateY(0)}}
+.cell .num{position:absolute;left:5px;top:2px;font-size:12px;color:#b2bcd6;font-weight:700}
+
+/* 경로 화살표 (교과서 125쪽 모양) */
+.pathmark{position:absolute;font-weight:900;color:#a9b6d8;font-size:calc(var(--cell)*.3);display:flex;align-items:center;justify-content:center;width:calc(var(--cell)*.55);height:var(--cell)}
+.pathmark.small{font-size:calc(var(--cell)*.2)}
+
+/* 로봇 */
+.robotSide{display:flex;flex-direction:column;align-items:center;gap:10px;width:260px}
+.bubble{position:relative;background:#fff;border-radius:22px;padding:16px 18px;font-size:23px;font-weight:800;line-height:1.35;min-height:84px;width:260px;
+  box-shadow:0 6px 16px rgba(31,42,68,.1);display:flex;align-items:center;justify-content:center;text-align:center}
+.bubble::after{content:"";position:absolute;bottom:-14px;left:50%;margin-left:-14px;border:14px solid transparent;border-top-color:#fff;border-bottom:0}
+.bubble span{display:block;word-break:keep-all}
+.bubble .tileInline{display:inline-block;width:34px;height:34px;vertical-align:middle}
+.unitStrip{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;align-items:center;min-height:56px;font-size:16px;color:var(--sub);font-weight:700;width:260px}
+.unitStrip .lab{width:100%;text-align:center}
+.unitStrip .u{width:48px;height:48px;background:#fff;border:3px dashed var(--accent);border-radius:10px;display:flex;align-items:center;justify-content:center}
+.unitStrip .u svg{width:76%;height:76%}
+
+.robot{width:150px;height:170px;transition:transform .35s}
+.robot .eye{transform-origin:center;transform-box:fill-box}
+.robot.blink .eye{animation:blink .4s 2}
+@keyframes blink{50%{transform:scaleY(.1)}}
+.robot.tilt{transform:rotate(-14deg)}
+.robot.happy{animation:bounce .6s ease 2}
+@keyframes bounce{40%{transform:translateY(-14px)}}
+.mouth-happy,.mouth-hmm,.mouth-o,.q{display:none}
+.robot.happy .mouth-happy{display:inline}
+.robot.tilt .mouth-hmm{display:inline}
+.robot.think .mouth-o{display:inline}
+.robot.happy .mouth-flat,.robot.tilt .mouth-flat,.robot.think .mouth-flat{display:none}
+.robot.tilt .q{display:inline}
+
+/* 바닥 위를 다니는 작은 로봇 */
+.walker{position:absolute;width:calc(var(--cell)*.62);height:calc(var(--cell)*.62);left:0;top:0;pointer-events:none;
+  transition:transform .26s ease;z-index:5;filter:drop-shadow(0 4px 6px rgba(0,0,0,.25))}
+
+/* 아래 조작부 */
+.controls{padding:10px 18px 16px;display:flex;flex-direction:column;gap:12px;align-items:center}
+.palette{display:flex;gap:14px;align-items:center;flex-wrap:nowrap}
+.tileBtn{width:88px;height:88px;border-radius:22px;background:#fff;box-shadow:0 5px 0 var(--line),0 6px 14px rgba(31,42,68,.08);display:flex;align-items:center;justify-content:center}
+.tileBtn svg{width:64%;height:64%}
+.tileBtn:active{transform:translateY(4px);box-shadow:0 1px 0 var(--line)}
+.actions{display:flex;gap:18px;align-items:center}
+.actions .btn{min-width:250px;height:72px;font-size:26px}
+.erase{min-width:120px!important;font-size:22px!important}
+
+/* ---------- 교사 화면 ---------- */
+body.teacher{--cell:min(calc((100vw - 420px) / 6.4), calc((100dvh - 330px) / 4.4))}
+.tabs{display:flex;gap:10px;align-items:center}
+.tab{height:54px;padding:0 24px;border-radius:16px;font-size:22px;font-weight:800;background:#fff;box-shadow:0 3px 0 var(--line)}
+.tab.on{background:var(--accent);color:#fff;box-shadow:0 3px 0 var(--accent-d)}
+.statusDot{font-size:15px;color:var(--sub);font-weight:700;padding:6px 12px;border-radius:999px;background:#fff}
+.statusDot.local{color:#9a5b00;background:#fff4dd}
+.statusDot.on{color:#17805d;background:#e2f7ef}
+.statusDot.off{color:#b3261e;background:#fde7e5}
+.pane{min-height:0;overflow:auto}
+.gallery{display:grid;grid-template-columns:repeat(6,1fr);gap:16px;padding:8px 24px 24px}
+@media (max-width:1100px){.gallery{grid-template-columns:repeat(4,1fr)}}
+.card{background:#fff;border-radius:18px;padding:12px;box-shadow:0 4px 14px rgba(31,42,68,.08);text-align:left}
+.card.empty{background:#eceff5;color:#9aa3b8;box-shadow:none}
+.card h3{margin:0 0 8px;font-size:22px;display:flex;justify-content:space-between}
+.card h3 small{font-size:14px;color:var(--sub);font-weight:600}
+.mini{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;background:#dfe6f7;padding:3px;border-radius:8px}
+.mini div{aspect-ratio:1;background:#fff;border-radius:4px;display:flex;align-items:center;justify-content:center;border:2px solid transparent}
+.mini div.mine{border-color:#7b8aad}
+.mini svg{width:78%;height:78%}
+.card.empty .mini div{background:#f6f7fa}
+.modal{position:fixed;inset:0;background:rgba(20,28,50,.55);display:flex;align-items:center;justify-content:center;z-index:40}
+.modal .box{background:var(--bg);border-radius:26px;padding:22px 26px;display:flex;flex-direction:column;gap:16px;align-items:center;max-width:96vw;max-height:96dvh;overflow:auto}
+.modal h2{margin:0;font-size:30px}
+.guessHead{display:flex;align-items:center;gap:16px;justify-content:center;padding:6px 0 14px;flex-wrap:wrap}
+.guessHead select{font-size:22px;height:54px;border-radius:14px;border:2px solid var(--line);padding:0 12px;font-family:inherit;background:#fff}
+.settings label{display:flex;align-items:center;gap:12px;font-size:20px;font-weight:700;min-height:52px}
+.settings input[type=checkbox]{width:30px;height:30px}
+.settings .names{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.settings .names input{font-size:18px;height:44px;border-radius:10px;border:2px solid var(--line);padding:0 10px;width:100%;font-family:inherit;-webkit-user-select:text;user-select:text}
+.linkBox{display:flex;gap:18px;align-items:center;background:#fff;border-radius:16px;padding:12px 16px}
+.linkBox code{font-size:16px;word-break:break-all;-webkit-user-select:text;user-select:text}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2a44;color:#fff;padding:14px 22px;border-radius:14px;font-size:20px;font-weight:700;z-index:50;opacity:0;transition:.3s;pointer-events:none}
+.toast.show{opacity:1}
+
+@media (max-width:900px){
+  :root{--cell:min(calc((100vw - 60px) / 6.4), calc((100dvh - 470px) / 4.3))}
+  .stage{flex-direction:column;gap:8px}
+  .robotSide{flex-direction:row;width:auto}
+  .robot{width:90px;height:100px}
+  .bubble{width:auto;max-width:60vw;font-size:19px;min-height:64px}
+  .bubble::after{display:none}
+  .tileBtn{width:64px;height:64px}
+  .palette{gap:8px}
+  .actions .btn{min-width:0;font-size:20px;padding:0 14px}
+  #namePick .grid{grid-template-columns:repeat(3,96px)}
+  .gallery{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<!-- 이름 고르기 -->
+<div id="namePick" class="hidden">
+  <svg class="robot robot-mini" viewBox="0 0 150 170" data-robot></svg>
+  <h1>내 번호를 눌러요</h1>
+  <div class="grid" id="nameGrid"></div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <div id="topLeft"></div>
+    <div class="banner" id="banner"></div>
+    <div id="topRight"></div>
+  </div>
+
+  <!-- 바닥 + 로봇 (학생, 시연, 맞히기 공용) -->
+  <div class="stage" id="stage">
+    <div class="floorWrap" id="floorWrap">
+      <div class="floor" id="floor"></div>
+    </div>
+    <div class="robotSide" id="robotSide">
+      <div class="bubble" id="bubble"></div>
+      <svg class="robot" id="robot" viewBox="0 0 150 170" data-robot></svg>
+      <div class="unitStrip" id="unitStrip"></div>
+    </div>
+  </div>
+
+  <!-- 교사: 갤러리 -->
+  <div class="pane hidden" id="galleryPane"><div class="gallery" id="gallery"></div></div>
+
+  <div class="controls" id="controls">
+    <div class="palette" id="palette"></div>
+    <div class="actions" id="actions"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- 그림 정의 -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    </defs>
+</svg>
+
+<script>
+(function () {
+'use strict';
+const AI = window.RuleAI;
+const N = AI.FLOOR_SIZE;              // 24칸
+const params = new URLSearchParams(location.search);
+const IS_TEACHER = params.has('teacher') || params.get('mode') === 'teacher';
+const ROOM = (params.get('room') || 'class').replace(/[^a-zA-Z0-9_-]/g, '') || 'class';
+const COUNT = Math.max(1, Math.min(30, window.STUDENT_COUNT || 12));
+
+/* ---------------- 타일 6종: 모양과 색을 모두 다르게 ---------------- */
+const TILES = {
+  star:   { name: '별',     color: 'var(--t-star)',   svg: '<path d="M50 6l13 28 30 3-23 20 7 30-27-16-27 16 7-30L7 37l30-3z"/>' },
+  heart:  { name: '하트',   color: 'var(--t-heart)',  svg: '<path d="M50 88C20 66 6 50 6 32 6 18 17 8 30 8c9 0 16 5 20 12 4-7 11-12 20-12 13 0 24 10 24 24 0 18-14 34-44 56z"/>' },
+  circle: { name: '동그라미', color: 'var(--t-circle)', svg: '<circle cx="50" cy="50" r="40"/>' },
+  tri:    { name: '세모',   color: 'var(--t-tri)',    svg: '<path d="M50 8l44 80H6z"/>' },
+  square: { name: '네모',   color: 'var(--t-square)', svg: '<rect x="12" y="12" width="76" height="76" rx="6"/>' },
+  dia:    { name: '마름모', color: 'var(--t-dia)',    svg: '<path d="M50 4l42 46-42 46L8 50z"/>' }
+};
+const TILE_IDS = Object.keys(TILES);
+const ROBOT_ART = `<line x1="75" y1="8" x2="75" y2="28" stroke="#4f7cff" stroke-width="6" stroke-linecap="round"/> <circle cx="75" cy="8" r="8" fill="#ffb020"/> <rect x="18" y="28" width="114" height="92" rx="30" fill="#4f7cff"/> <rect x="30" y="42" width="90" height="62" rx="20" fill="#eaf0ff"/> <ellipse class="eye" cx="56" cy="70" rx="9" ry="11" fill="#1f2a44"/> <ellipse class="eye" cx="94" cy="70" rx="9" ry="11" fill="#1f2a44"/> <circle cx="44" cy="88" r="6" fill="#ffc2cc"/><circle cx="106" cy="88" r="6" fill="#ffc2cc"/> <rect class="mouth-flat" x="66" y="88" width="18" height="5" rx="2.5" fill="#1f2a44"/> <path class="mouth-happy" d="M62 86 Q75 100 88 86" stroke="#1f2a44" stroke-width="5" fill="none" stroke-linecap="round"/> <path class="mouth-hmm" d="M64 92 Q70 87 76 92 T88 91" stroke="#1f2a44" stroke-width="4" fill="none" stroke-linecap="round"/> <circle class="mouth-o" cx="75" cy="91" r="5" fill="#1f2a44"/> <text class="q" x="122" y="40" font-size="34" font-weight="900" fill="#ffb020">?</text> <rect x="40" y="122" width="70" height="34" rx="12" fill="#3a5fd6"/> <circle cx="75" cy="139" r="7" fill="#ffb020"/> <rect x="8" y="58" width="12" height="34" rx="6" fill="#3a5fd6"/> <rect x="130" y="58" width="12" height="34" rx="6" fill="#3a5fd6"/>`;
+document.querySelectorAll('[data-robot]').forEach(e => { e.innerHTML = ROBOT_ART; });
+const tileSVG = id => id && TILES[id] ? `<svg viewBox="0 0 100 100" fill="${TILES[id].color}">${TILES[id].svg}</svg>` : '';
+
+/* ---------------- 말풍선 문구 (명세 그대로) ---------------- */
+const SAY = {
+  start: '안녕! 나는 인공지능 로봇이야. 규칙을 보여 주면 내가 맞혀 볼게!',
+  thinking: '음… 🤔',
+  confident: t => `다음은 ${t}일 것 같아요!`,
+  need_more: '잘 모르겠어요. 조금 더 보여 주세요!',
+  confused: '조금 헷갈려요. 규칙을 다시 볼까요?',
+  single: t => `${t}만 계속 나오네요! 다른 타일도 섞어 볼까요?`,
+  locked: '먼저 저에게 물어봐 주세요!',
+  done: '짜잔! 바닥을 다 꾸몄어요!',
+  sent: '선생님께 보냈어요!',
+  sendFail: '선생님께 화면을 보여 주세요.',
+  full: '바닥이 꽉 찼어요!'
+};
+
+/* ---------------- 설정(교사가 바꿈) ---------------- */
+let settings = { voice: true, sound: true, free: false, names: {} };
+const nameOf = sid => (settings.names && settings.names[sid]) || `${sid}번`;
+
+/* =====================================================================
+ * 저장소: Firebase Realtime DB, 설정이 없으면 localStorage(같은 브라우저 탭끼리)
+ * ===================================================================== */
+const Store = (() => {
+  const cfg = window.FIREBASE_CONFIG || {};
+  const useFirebase = !!(cfg.apiKey && cfg.databaseURL);
+  let db = null, ready = null, connected = false;
+  const listeners = { works: [], settings: [], conn: [] };
+  const LKEY = k => `rr_${ROOM}_${k}`;
+
+  function loadScript(src) {
+    return new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s);
+    });
+  }
+  function init() {
+    if (ready) return ready;
+    if (!useFirebase) { ready = Promise.resolve(false); setupLocal(); return ready; }
+    const v = '10.12.2';
+    ready = loadScript(`https://www.gstatic.com/firebasejs/${v}/firebase-app-compat.js`)
+      .then(() => loadScript(`https://www.gstatic.com/firebasejs/${v}/firebase-database-compat.js`))
+      .then(() => {
+        firebase.initializeApp(cfg);
+        db = firebase.database();
+        db.ref('.info/connected').on('value', s => { connected = !!s.val(); listeners.conn.forEach(f => f(connected)); });
+        db.ref(`rooms/${ROOM}/works`).on('value', s => { const v = s.val() || {}; listeners.works.forEach(f => f(v)); });
+        db.ref(`rooms/${ROOM}/settings`).on('value', s => { const v = s.val(); if (v) listeners.settings.forEach(f => f(v)); });
+        return true;
+      })
+      .catch(err => { console.warn('Firebase를 불러오지 못했습니다(오프라인?)', err); db = null; listeners.conn.forEach(f => f(false)); return false; });
+    return ready;
+  }
+  function readLocal(k, d) { try { return JSON.parse(localStorage.getItem(LKEY(k))) || d; } catch (e) { return d; } }
+  function writeLocal(k, v) { try { localStorage.setItem(LKEY(k), JSON.stringify(v)); } catch (e) {} }
+  function setupLocal() {
+    window.addEventListener('storage', e => {
+      if (e.key === LKEY('works')) listeners.works.forEach(f => f(readLocal('works', {})));
+      if (e.key === LKEY('settings')) listeners.settings.forEach(f => f(readLocal('settings', settings)));
+    });
+    setTimeout(() => {
+      listeners.works.forEach(f => f(readLocal('works', {})));
+      const s = readLocal('settings', null); if (s) listeners.settings.forEach(f => f(s));
+    }, 0);
+  }
+  return {
+    mode: useFirebase ? 'firebase' : 'local',
+    init,
+    isConnected: () => useFirebase ? connected : true,
+    onWorks: f => listeners.works.push(f),
+    onSettings: f => listeners.settings.push(f),
+    onConn: f => listeners.conn.push(f),
+    submit(sid, work) {
+      if (!useFirebase) {
+        const all = readLocal('works', {}); all[sid] = work; writeLocal('works', all);
+        listeners.works.forEach(f => f(all));
+        return Promise.resolve(true);
+      }
+      if (!db) return Promise.reject(new Error('no db'));
+      // 오프라인이면 Firebase가 쓰기를 미뤄 두므로 5초 안에 확인이 안 되면 실패로 안내
+      return Promise.race([
+        db.ref(`rooms/${ROOM}/works/${sid}`).set(work).then(() => true),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
+      ]);
+    },
+    saveSettings(s) {
+      if (!useFirebase) { writeLocal('settings', s); return Promise.resolve(); }
+      return db ? db.ref(`rooms/${ROOM}/settings`).set(s) : Promise.reject();
+    },
+    clearWorks() {
+      if (!useFirebase) { writeLocal('works', {}); listeners.works.forEach(f => f({})); return Promise.resolve(); }
+      return db ? db.ref(`rooms/${ROOM}/works`).remove() : Promise.reject();
+    }
+  };
+})();
+
+/* =====================================================================
+ * 소리와 음성
+ * ===================================================================== */
+const Sound = (() => {
+  let ctx = null;
+  const ac = () => (ctx = ctx || new (window.AudioContext || window.webkitAudioContext)());
+  function tone(freq, dur = 0.08, type = 'sine', vol = 0.18, delay = 0) {
+    if (!settings.sound) return;
+    try {
+      const c = ac(), t = c.currentTime + delay;
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + 0.02);
+    } catch (e) {}
+  }
+  return {
+    tick: () => tone(880, 0.06, 'triangle', 0.22),                 // "톡"
+    erase: () => tone(420, 0.07, 'triangle', 0.15),
+    fill: i => tone(392 * Math.pow(2, i / 24), 0.12, 'sine', 0.16),  // 칸마다 조금씩 높아짐
+    happy: () => { tone(660, .12); tone(880, .14, 'sine', .18, .12); tone(1175, .2, 'sine', .18, .26); },
+    hmm: () => { tone(520, .12, 'sine', .14); tone(440, .16, 'sine', .14, .14); },   // 오답음 아님: 부드러운 "음?"
+    flip: () => tone(700, 0.08, 'triangle', 0.18),
+    unlock: () => { try { ac().resume(); } catch (e) {} }
+  };
+})();
+function speak(text) {
+  if (!settings.voice || !('speechSynthesis' in window)) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.replace(/[🤔😀…]/g, ''));
+    u.lang = 'ko-KR'; u.rate = 0.95; u.pitch = 1.2;
+    const ko = speechSynthesis.getVoices().find(v => /ko/i.test(v.lang));
+    if (ko) u.voice = ko;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+/* =====================================================================
+ * 바닥 그리기
+ * ===================================================================== */
+const $ = id => document.getElementById(id);
+const floorEl = $('floor'), floorWrap = $('floorWrap');
+const cells = [];                     // 경로 순서 k → 칸 요소
+(function buildFloor() {
+  const grid = [];
+  for (let k = 0; k < N; k++) {
+    const { row, col } = AI.pathCell(k);
+    const d = document.createElement('div');
+    d.className = 'cell';
+    d.style.gridRow = row + 1; d.style.gridColumn = col + 1;
+    floorEl.appendChild(d); cells[k] = d; grid.push(d);
+  }
+  // 경로 표시: 시작 / ↓ / 끝 (교과서와 같은 지그재그)
+  const marks = [
+    { side: 'left', row: 0, text: '시작', small: true },
+    { side: 'right', row: 0, text: '↓' }, { side: 'left', row: 1, text: '↓' },
+    { side: 'right', row: 2, text: '↓' }, { side: 'left', row: 3, text: '끝', small: true }
+  ];
+  marks.forEach(m => {
+    const e = document.createElement('div');
+    e.className = 'pathmark' + (m.small ? ' small' : '');
+    e.textContent = m.text;
+    e.style.top = `calc(var(--cell)*.1 + 6px + ${m.row} * (var(--cell) + 6px) + var(--cell)*.5)`;
+    e.style.transform = 'translateY(-50%)';
+    e.style[m.side] = '0';
+    floorWrap.appendChild(e);
+  });
+})();
+const walker = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+walker.setAttribute('viewBox', '0 0 150 170'); walker.setAttribute('class', 'walker hidden');
+walker.innerHTML = ROBOT_ART;
+floorEl.appendChild(walker);
+function moveWalker(k) {
+  if (k < 0) { walker.classList.add('hidden'); return; }
+  const c = cells[k];
+  walker.classList.remove('hidden');
+  const x = c.offsetLeft + c.offsetWidth * 0.19, y = c.offsetTop - c.offsetHeight * 0.38;
+  walker.style.transform = `translate(${x}px, ${y}px)`;
+}
+
+/* 바닥 상태를 칸에 반영
+ * view: { tiles: [...24], mineCount, preview: {k, tile}, unit: [k...], hidden: Set(k), pop: k } */
+function renderFloor(view) {
+  for (let k = 0; k < N; k++) {
+    const c = cells[k], t = view.tiles[k];
+    const hidden = view.hidden && view.hidden.has(k);
+    let cls = 'cell';
+    if (hidden) cls += ' hide';
+    else if (t) cls += k < view.mineCount ? ' mine' : ' auto';
+    if (view.unit && view.unit.includes(k)) cls += ' unit';
+    if (view.preview && view.preview.k === k) cls += ' preview';
+    if (view.pop === k) cls += ' pop';
+    if (view.flip === k) cls += ' flip';
+    c.className = cls;
+    const show = hidden ? '' : (t ? tileSVG(t) : (view.preview && view.preview.k === k ? tileSVG(view.preview.tile) : ''));
+    if (c._html !== show) { c.innerHTML = show; c._html = show; }
+  }
+}
+
+/* =====================================================================
+ * 로봇 표정 / 말풍선
+ * ===================================================================== */
+const robotEl = $('robot'), bubbleEl = $('bubble'), unitStrip = $('unitStrip');
+function face(state) { robotEl.setAttribute('class', 'robot ' + (state || '')); }
+function say(text, opts = {}) {
+  bubbleEl.innerHTML = `<span>${opts.html || text}</span>`;
+  if (!opts.silent) speak(text);
+}
+function sayTile(fn, tile) {
+  const html = fn(`<span class="tileInline">${tileSVG(tile)}</span>`);
+  say(fn(TILES[tile].name), { html });
+}
+function showUnit(unit) {
+  unitStrip.innerHTML = unit && unit.length
+    ? '<span class="lab">인공지능이 찾은 반복</span>' + unit.map(t => `<span class="u">${tileSVG(t)}</span>`).join('')
+    : '';
+}
+let toastTimer;
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* =====================================================================
+ * 만들기 화면 (학생 화면 + 교사 시연 모드가 함께 사용)
+ * ===================================================================== */
+const Maker = (() => {
+  let seq = [];            // 학생이 놓은 타일
+  let result = null;       // predict 결과
+  let full = null;         // 완성된 24칸
+  let phase = 'build';     // build | thinking | filling | done | submitted
+  let fillPos = 0;         // 로봇이 다음에 채울 칸
+  let period = 0;
+  let timer = null;
+  let demo = false;        // 교사 시연 모드
+  let sid = null;
+
+  const saveLocal = () => {
+    if (demo || !sid) return;
+    try { localStorage.setItem(`rr_${ROOM}_me_${sid}`, JSON.stringify({ seq, full, phase: phase === 'filling' ? 'build' : phase, period })); } catch (e) {}
+  };
+  const loadLocal = () => {
+    try {
+      const v = JSON.parse(localStorage.getItem(`rr_${ROOM}_me_${sid}`));
+      if (v) { seq = v.seq || []; full = v.full || null; period = v.period || 0; phase = full ? (v.phase === 'submitted' ? 'submitted' : 'done') : 'build'; fillPos = full ? N : 0; }
+    } catch (e) {}
+  };
+
+  function canRobot() {
+    if (phase !== 'build') return false;
+    if (settings.free) return seq.length > 0;
+    return result && (result.status === 'confident' || result.status === 'single');
+  }
+  function robotPeriod() {
+    if (result && result.period && (result.status === 'confident' || result.status === 'single')) return result.period;
+    return AI.freePeriod(seq);
+  }
+
+  function view(extra = {}) {
+    const tiles = new Array(N).fill(null);
+    const src = full || seq;
+    for (let k = 0; k < N; k++) if (k < src.length && (full ? k < Math.max(fillPos, seq.length) : true)) tiles[k] = src[k];
+    const v = { tiles, mineCount: seq.length };
+    if (phase === 'build' && !full && result && (result.status === 'confident' || result.status === 'single') && seq.length < N) {
+      v.preview = { k: seq.length, tile: result.next };
+      v.unit = [...Array(result.period).keys()];
+    }
+    return Object.assign(v, extra);
+  }
+
+  function draw(extra) {
+    renderFloor(view(extra));
+    renderActions();
+    const b = $('banner');
+    if ((phase === 'done' || phase === 'submitted') && full) {
+      b.innerHTML = `내가 놓은 칸 <b>${seq.length}</b>개 → 로봇이 꾸민 바닥 <b>${N}</b>칸`;
+      b.classList.add('show');
+    } else { b.classList.remove('show'); }
+  }
+
+  function addTile(id) {
+    Sound.unlock();
+    if (phase === 'done' || phase === 'submitted' || phase === 'filling' || phase === 'thinking') return;
+    if (seq.length >= N) { say(SAY.full); return; }
+    if (full) { full = null; fillPos = 0; moveWalker(-1); }   // 한 칸씩 채우던 중이면 취소
+    seq.push(id); result = null; showUnit(null); face('');
+    Sound.tick();
+    draw({ pop: seq.length - 1 });
+    saveLocal();
+  }
+  function eraseOne() {
+    if (phase !== 'build' || !seq.length) return;
+    if (full) { full = null; fillPos = 0; moveWalker(-1); }
+    seq.pop(); result = null; showUnit(null); face('');
+    Sound.erase(); draw(); saveLocal();
+  }
+  function ask() {
+    Sound.unlock();
+    if (phase !== 'build') return;
+    phase = 'thinking'; face('think blink'); say(SAY.thinking, { silent: true }); renderActions();
+    setTimeout(() => {
+      phase = 'build';
+      result = AI.predict(seq);
+      if (result.status === 'confident') { face('happy'); sayTile(SAY.confident, result.next); showUnit(result.unit); Sound.happy(); }
+      else if (result.status === 'single') { face('happy'); sayTile(SAY.single, seq[0]); showUnit(result.unit); Sound.happy(); }
+      else if (result.status === 'need_more') { face('tilt'); say(SAY.need_more); showUnit(null); Sound.hmm(); }
+      else { face('tilt'); say(SAY.confused); showUnit(null); Sound.hmm(); }
+      draw();
+    }, 800);
+  }
+  function startFill(stepOnly) {
+    Sound.unlock();
+    if (phase === 'filling') return;
+    if (!canRobot() && !(stepOnly && phase === 'build' && fillPos > seq.length)) {
+      if (phase === 'build') { face('tilt'); say(SAY.locked); }
+      return;
+    }
+    if (!full) { period = robotPeriod(); full = AI.fill(seq, period); fillPos = seq.length; }
+    if (stepOnly) { stepOnce(); return; }
+    phase = 'filling'; face('happy'); showUnit(full.slice(0, period)); renderActions();
+    const run = () => {
+      if (fillPos >= N) { finish(); return; }
+      stepOnce(true);
+      timer = setTimeout(run, 300);
+    };
+    run();
+  }
+  function stepOnce(auto) {
+    if (fillPos >= N) { finish(); return; }
+    moveWalker(fillPos);
+    Sound.fill(fillPos);
+    const k = fillPos; fillPos++;
+    renderFloor(view({ pop: k }));
+    if (!auto) {
+      if (fillPos >= N) finish();
+      else { phase = 'build'; renderActions(); }
+    }
+  }
+  function finish() {
+    clearTimeout(timer);
+    phase = 'done'; fillPos = N;
+    setTimeout(() => moveWalker(-1), 500);
+    face('happy'); say(SAY.done); Sound.happy();
+    draw(); saveLocal();
+  }
+  function submit() {
+    if (!full) return;
+    const work = { sid, placed: seq.slice(), period, full: full.slice(), at: Date.now() };
+    say('보내는 중…', { silent: true });
+    Store.submit(sid, work).then(() => {
+      phase = 'submitted'; face('happy'); say(SAY.sent); draw(); saveLocal();
+    }).catch(() => {
+      face('tilt'); say(SAY.sendFail); draw();
+    });
+  }
+  function again() {           // 다시 만들기: 같은 이름으로 처음부터
+    clearTimeout(timer);
+    seq = []; result = null; full = null; fillPos = 0; period = 0; phase = 'build';
+    moveWalker(-1); showUnit(null); face(''); say(SAY.start); draw(); saveLocal();
+  }
+  function confirmReset() {
+    const m = document.createElement('div');
+    m.className = 'modal';
+    m.innerHTML = `<div class="box"><svg class="robot tilt" viewBox="0 0 150 170" style="width:110px;height:120px">${ROBOT_ART}</svg>
+      <h2>처음부터 다시 할까요?</h2><div class="actions"><button class="btn warm" data-a="yes">↺ 네</button><button class="btn" data-a="no">아니요</button></div></div>`;
+    m.addEventListener('click', e => {
+      const a = e.target.closest('[data-a]'); if (!a) return;
+      if (a.dataset.a === 'yes') again();
+      m.remove();
+    });
+    document.body.appendChild(m);
+  }
+
+  /* 조작부 */
+  function renderPalette() {
+    $('palette').innerHTML = TILE_IDS.map(id => `<button class="tileBtn" data-tile="${id}" aria-label="${TILES[id].name}">${tileSVG(id)}</button>`).join('')
+      + `<button class="btn erase" data-act="erase"><span class="ico">⌫</span>지우기</button>`;
+  }
+  function renderActions() {
+    const a = $('actions');
+    const done = phase === 'done' || phase === 'submitted';
+    $('palette').style.visibility = done ? 'hidden' : 'visible';
+    if (done) {
+      a.innerHTML = demo
+        ? `<button class="btn" data-act="again"><span class="ico">↺</span>다시 만들기</button>`
+        : (phase === 'submitted'
+          ? `<button class="btn go dim" disabled><span class="ico">✔</span>보냈어요</button><button class="btn" data-act="again"><span class="ico">↺</span>다시 만들기</button>`
+          : `<button class="btn go" data-act="submit"><span class="ico">📮</span>제출하기</button><button class="btn" data-act="again"><span class="ico">↺</span>다시 만들기</button>`);
+      return;
+    }
+    const busy = phase === 'thinking' || phase === 'filling';
+    const robotOn = canRobot();
+    a.innerHTML =
+      (settings.free ? '' : `<button class="btn primary ${busy ? 'dim' : ''}" data-act="ask"><span class="ico">🤖</span>물어보기</button>`)
+      + `<button class="btn go ${robotOn && !busy ? '' : 'dim'}" data-act="robot"><span class="ico">▶</span>로봇에게 맡기기</button>`
+      + (demo ? `<button class="btn warm ${(robotOn || fillPos > seq.length) && !busy ? '' : 'dim'}" data-act="step"><span class="ico">⏭</span>한 칸씩</button>` : '');
+  }
+  $('controls').addEventListener('click', e => {
+    if (!Maker.active) return;
+    const t = e.target.closest('[data-tile]'); if (t) { addTile(t.dataset.tile); return; }
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    ({ erase: eraseOne, ask, robot: () => startFill(false), step: () => startFill(true), submit, again })[b.dataset.act]?.();
+  });
+
+  return {
+    active: false,
+    start(opts) {
+      demo = !!opts.demo; sid = opts.sid || null;
+      clearTimeout(timer);
+      seq = []; result = null; full = null; fillPos = 0; period = 0; phase = 'build';
+      if (!demo) loadLocal();
+      this.active = true;
+      renderPalette(); moveWalker(-1); showUnit(null); face('');
+      say(SAY.start, { silent: true });
+      draw();
+    },
+    stop() { this.active = false; clearTimeout(timer); moveWalker(-1); },
+    refresh() { if (this.active) draw(); },
+    confirmReset
+  };
+})();
+
+/* =====================================================================
+ * 학생 화면
+ * ===================================================================== */
+function startStudent() {
+  const urlSid = params.get('sid');
+  if (urlSid) { try { localStorage.setItem(`rr_${ROOM}_sid`, urlSid); } catch (e) {} }
+  const saved = urlSid || (() => { try { return localStorage.getItem(`rr_${ROOM}_sid`); } catch (e) { return null; } })();
+  const pick = () => {
+    $('namePick').classList.remove('hidden');
+    $('nameGrid').innerHTML = Array.from({ length: COUNT }, (_, i) => i + 1)
+      .map(sid => `<button class="btn" data-sid="${sid}">${nameOf(sid)}</button>`).join('');
+  };
+  $('nameGrid').addEventListener('click', e => {
+    const b = e.target.closest('[data-sid]'); if (!b) return;
+    Sound.unlock(); Sound.tick();
+    try { localStorage.setItem(`rr_${ROOM}_sid`, b.dataset.sid); } catch (e) {}
+    $('namePick').classList.add('hidden');
+    enter(b.dataset.sid);
+  });
+  function enter(sid) {
+    $('topLeft').innerHTML = `<button class="btn" id="whoBtn">🙂 ${nameOf(sid)}</button>`;
+    $('topRight').innerHTML = `<button class="btn" id="resetBtn"><span class="ico">↺</span>처음부터</button>`;
+    $('whoBtn').onclick = pick;
+    $('resetBtn').onclick = () => Maker.confirmReset();
+    Maker.start({ sid });
+    setTimeout(() => speak(SAY.start), 300);
+  }
+  Store.onSettings(s => {
+    settings = Object.assign(settings, s);
+    Maker.refresh();
+    const w = $('whoBtn'); const sid = (() => { try { return localStorage.getItem(`rr_${ROOM}_sid`); } catch (e) { return null; } })();
+    if (w && sid) w.textContent = `🙂 ${nameOf(sid)}`;
+    if (!$('namePick').classList.contains('hidden')) pick();
+  });
+  Store.init();
+  if (saved && +saved >= 1 && +saved <= COUNT) enter(saved); else pick();
+}
+
+/* =====================================================================
+ * 교사 화면: 시연 / 갤러리 / 맞히기 / 설정
+ * ===================================================================== */
+function startTeacher() {
+  document.body.classList.add('teacher');
+  let works = {};
+  let tab = 'demo';
+  let guess = { sid: null, revealed: 0 };
+
+  $('topLeft').innerHTML = `<div class="tabs">
+      <button class="tab" data-tab="demo">시연</button>
+      <button class="tab" data-tab="gallery">갤러리</button>
+      <button class="tab" data-tab="guess">맞히기</button></div>`;
+  $('topRight').innerHTML = `<span class="statusDot" id="conn"></span> <button class="btn" id="setBtn" style="min-height:54px">⚙</button>`;
+  $('topLeft').addEventListener('click', e => { const t = e.target.closest('[data-tab]'); if (t) show(t.dataset.tab); });
+  $('setBtn').onclick = openSettings;
+
+  function setConn(on) {
+    const c = $('conn');
+    if (Store.mode === 'local') { c.className = 'statusDot local'; c.textContent = '로컬 모드(공유 안 됨)'; return; }
+    c.className = 'statusDot ' + (on ? 'on' : 'off');
+    c.textContent = on ? '● 연결됨' : '● 연결 끊김';
+  }
+  setConn(false);
+  Store.onConn(setConn);
+  Store.onWorks(v => { works = v || {}; if (tab === 'gallery') renderGallery(); if (tab === 'guess') renderGuess(); });
+  Store.onSettings(s => { settings = Object.assign(settings, s); if (tab === 'gallery') renderGallery(); Maker.refresh(); });
+  Store.init().then(() => setConn(Store.isConnected()));
+
+  function show(t) {
+    tab = t;
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+    const isDemo = t === 'demo', isGal = t === 'gallery', isGuess = t === 'guess';
+    $('stage').classList.toggle('hidden', isGal);
+    $('galleryPane').classList.toggle('hidden', !isGal);
+    $('robotSide').classList.toggle('hidden', isGuess);      // 맞히기: 학생들이 인공지능 역할 → 로봇 숨김
+    $('banner').classList.remove('show');
+    if (isDemo) { $('controls').classList.remove('hidden'); Maker.start({ demo: true }); }
+    else { Maker.stop(); }
+    if (isGal) { $('controls').classList.add('hidden'); renderGallery(); }
+    if (isGuess) { renderGuess(); }
+  }
+
+  function miniHTML(w) {
+    let html = '<div class="mini">';
+    const grid = new Array(N);
+    for (let k = 0; k < N; k++) { const { row, col } = AI.pathCell(k); grid[row * 6 + col] = k; }
+    for (let i = 0; i < N; i++) {
+      const k = grid[i];
+      const t = w && w.full ? w.full[k] : null;
+      html += `<div class="${w && k < w.placed.length ? 'mine' : ''}">${tileSVG(t)}</div>`;
+    }
+    return html + '</div>';
+  }
+  function renderGallery() {
+    const g = $('gallery');
+    let html = '';
+    for (let sid = 1; sid <= COUNT; sid++) {
+      const w = works[sid];
+      const time = w ? new Date(w.at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '아직';
+      html += `<button class="card ${w ? '' : 'empty'}" data-sid="${sid}"><h3>${nameOf(sid)} <small>${time}</small></h3>${miniHTML(w)}</button>`;
+    }
+    g.innerHTML = html;
+  }
+  $('gallery').addEventListener('click', e => {
+    const c = e.target.closest('[data-sid]'); if (!c) return;
+    const w = works[c.dataset.sid]; if (!w) return;
+    const m = document.createElement('div');
+    m.className = 'modal';
+    m.innerHTML = `<div class="box"><h2>${nameOf(c.dataset.sid)}의 바닥</h2>
+      <div style="width:min(80vw, calc((96dvh - 240px) * 1.5))">${miniHTML(w)}</div>
+      <div style="font-size:22px;font-weight:800">놓은 칸 ${w.placed.length}개 → 바닥 ${N}칸</div>
+      <div class="actions"><button class="btn primary" data-a="guess">🔍 맞히기로 보내기</button><button class="btn" data-a="close">닫기</button></div></div>`;
+    m.addEventListener('click', ev => {
+      const a = ev.target.closest('[data-a]');
+      if (!a && ev.target !== m) return;
+      if (a && a.dataset.a === 'guess') { guess = { sid: c.dataset.sid, revealed: 0 }; show('guess'); }
+      m.remove();
+    });
+    document.body.appendChild(m);
+  });
+
+  function renderGuess() {
+    const submitted = Object.keys(works).filter(k => works[k]).sort((a, b) => a - b);
+    if (!guess.sid || !works[guess.sid]) guess = { sid: submitted[0] || null, revealed: 0 };
+    $('controls').classList.remove('hidden');
+    $('palette').style.visibility = 'visible';
+    $('palette').innerHTML = `<div class="guessHead">
+        <select id="guessSel">${submitted.length ? submitted.map(s => `<option value="${s}" ${s == guess.sid ? 'selected' : ''}>${nameOf(s)}</option>`).join('') : '<option>제출한 작품이 없어요</option>'}</select>
+        <span style="font-size:22px;font-weight:800;color:var(--sub)">여러분이 인공지능이에요! 다음 칸에 올 타일은?</span></div>`;
+    $('actions').innerHTML = `<button class="btn primary" data-g="one"><span class="ico">🃏</span>한 칸 공개</button>
+        <button class="btn go" data-g="all"><span class="ico">👀</span>모두 공개</button>
+        <button class="btn" data-g="hide"><span class="ico">↺</span>다시 가리기</button>`;
+    $('guessSel').onchange = e => { guess = { sid: e.target.value, revealed: 0 }; drawGuess(); };
+    drawGuess();
+  }
+  function drawGuess(flipK) {
+    const w = works[guess.sid];
+    if (!w) { renderFloor({ tiles: new Array(N).fill(null), mineCount: 0 }); return; }
+    const visible = w.placed.length + guess.revealed;
+    const hidden = new Set();
+    for (let k = visible; k < N; k++) hidden.add(k);
+    renderFloor({ tiles: w.full, mineCount: w.placed.length, hidden, flip: flipK });
+    $('banner').classList.toggle('show', visible >= N);
+    $('banner').innerHTML = `${nameOf(guess.sid)}: 놓은 칸 <b>${w.placed.length}</b>개 → 바닥 <b>${N}</b>칸`;
+  }
+  $('controls').addEventListener('click', e => {
+    if (tab !== 'guess') return;
+    const b = e.target.closest('[data-g]'); if (!b) return;
+    const w = works[guess.sid]; if (!w) return;
+    const max = N - w.placed.length;
+    if (b.dataset.g === 'one' && guess.revealed < max) { guess.revealed++; Sound.flip(); drawGuess(w.placed.length + guess.revealed - 1); }
+    if (b.dataset.g === 'all') { guess.revealed = max; Sound.happy(); drawGuess(); }
+    if (b.dataset.g === 'hide') { guess.revealed = 0; drawGuess(); }
+  });
+
+  function openSettings() {
+    const studentURL = location.href.split('?')[0] + (ROOM !== 'class' ? `?room=${ROOM}` : '');
+    const m = document.createElement('div');
+    m.className = 'modal';
+    m.innerHTML = `<div class="box settings" style="align-items:stretch;min-width:min(760px,94vw)">
+      <h2>⚙ 설정</h2>
+      <label><input type="checkbox" id="sVoice" ${settings.voice ? 'checked' : ''}> 로봇 말 읽어 주기(음성)</label>
+      <label><input type="checkbox" id="sSound" ${settings.sound ? 'checked' : ''}> 효과음</label>
+      <label><input type="checkbox" id="sFree" ${settings.free ? 'checked' : ''}> 자유 모드 (인공지능 예측 없이 타일 놓고 로봇에게 맡기기 · 3~4차시 연습용)</label>
+      <div style="font-size:18px;font-weight:800;margin-top:6px">이름 버튼 (비우면 번호로 표시)</div>
+      <div class="names">${Array.from({ length: COUNT }, (_, i) => i + 1).map(s => `<input data-n="${s}" placeholder="${s}번" value="${(settings.names && settings.names[s]) || ''}">`).join('')}</div>
+      <div class="linkBox"><div id="qr"></div><div><div style="font-weight:800;margin-bottom:6px">학생 접속 주소</div><code>${studentURL}</code></div></div>
+      <div class="actions" style="justify-content:space-between">
+        <button class="btn warm" data-a="clear">🗑 제출 작품 모두 지우기</button>
+        <div style="display:flex;gap:12px"><button class="btn primary" data-a="save">저장</button><button class="btn" data-a="close">닫기</button></div>
+      </div></div>`;
+    document.body.appendChild(m);
+    // QR 코드(인터넷 연결 시)
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    s.onload = () => { try { new QRCode(m.querySelector('#qr'), { text: studentURL, width: 120, height: 120 }); } catch (e) {} };
+    if (window.QRCode) s.onload(); else document.head.appendChild(s);
+    m.addEventListener('click', e => {
+      const a = e.target.closest('[data-a]'); if (!a) return;
+      if (a.dataset.a === 'save') {
+        const names = {};
+        m.querySelectorAll('[data-n]').forEach(i => { if (i.value.trim()) names[i.dataset.n] = i.value.trim().slice(0, 8); });
+        settings = { voice: m.querySelector('#sVoice').checked, sound: m.querySelector('#sSound').checked, free: m.querySelector('#sFree').checked, names };
+        Store.saveSettings(settings).then(() => toast('저장했어요')).catch(() => toast('저장하지 못했어요(연결 확인)'));
+        Maker.refresh(); if (tab === 'gallery') renderGallery();
+        m.remove();
+      } else if (a.dataset.a === 'clear') {
+        if (confirm('제출된 작품을 모두 지울까요? 되돌릴 수 없습니다.')) Store.clearWorks().then(() => toast('지웠어요'));
+      } else m.remove();
+    });
+  }
+
+  show('demo');
+}
+
+/* 화면 크기가 바뀌면 걷는 로봇 위치 보정 */
+window.addEventListener('resize', () => walker.classList.add('hidden'));
+if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};
+IS_TEACHER ? startTeacher() : startStudent();
+})();
+</script>
+</body>
+</html>
